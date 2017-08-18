@@ -42,6 +42,7 @@ import java.util.regex.Pattern;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.FORBIDDEN;
 import static io.netty.handler.codec.http.HttpResponseStatus.FOUND;
+import static io.netty.handler.codec.http.HttpResponseStatus.INTERNAL_SERVER_ERROR;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_MODIFIED;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
@@ -116,7 +117,7 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
             long ifModifiedSinceDateSeconds = ifModifiedSinceDate.getTime() / 1000;
             long fileLastModifedSeconds = file.lastModified() / 1000;
             if (ifModifiedSinceDateSeconds == fileLastModifedSeconds) {
-                sendNotModifed(ctx);
+                sendNotModified(ctx);
                 return;
             }
         }
@@ -179,6 +180,15 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
         if (!HttpUtil.isKeepAlive(request)) {
             // Close the connection when the whole content is written out
             lastContentFuture.addListener(ChannelFutureListener.CLOSE);
+        }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        cause.printStackTrace();
+        if (ctx.channel()
+               .isActive()) {
+            sendError(ctx, INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -280,8 +290,18 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
            .addListener(ChannelFutureListener.CLOSE);
     }
 
-    private static void sendNotModifed(ChannelHandlerContext ctx) {
+    /**
+     * When file timestamp is the same as what the browser is sending up, send a "304 Not Modified"
+     *
+     * @param ctx
+     */
+    private static void sendNotModified(ChannelHandlerContext ctx) {
         FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, NOT_MODIFIED);
+        setDateHeader(response);
+
+        // Close the connection as soon as the error message is sent
+        ctx.writeAndFlush(response)
+           .addListener(ChannelFutureListener.CLOSE);
     }
 
     /**
